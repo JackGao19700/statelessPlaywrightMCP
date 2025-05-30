@@ -68,12 +68,15 @@ export async function createServer(): Promise<{ server: McpServer; browserAgent:
         {
             pageID: z.number().int().nonnegative().optional().describe("The index of the page to take a screenshot. If ignored or 0, use the current page."),
             selector: z.string().optional().describe("The selector of the element to screenshot. If null, screenshot the whole page."),
+            selectorType: z.enum(["css|xpath","byLabel", "byPlaceHolder", "byText", "byTitle", "byAltText"]).optional()
+                .describe("The type of the selector to use, availale options are 'css|xpath', 'byLabel', 'byPlaceHolder', 'byText', 'byTitle', 'byAltText'. If null, use default option 'css|xpath'."),
             width: z.number().optional().describe("The width of the screenshot. If null, use the element's width or viewport width."),
             height: z.number().optional().describe("The height of the screenshot. If null, use the element's height or viewport height."),
             offsetX: z.number().optional().describe("The horizontal offset from the top-left corner of the element or page. If null, default to 0."),
             offsetY: z.number().optional().describe("The vertical offset from the top-left corner of the element or page. If null, default to 0."),
         },
-        async ({ pageID = 0, selector, width, height, offsetX = 0, offsetY = 0 }) => {
+        async ({ pageID = 0, selector,selectorType="css|xpath", width, height, offsetX = 0, offsetY = 0 }) => {
+            logger.error(`snapshot para---pageID:${pageID},selector:${selector},selectorType:${selectorType},width:${width},height:${height},offsetX:${offsetX},offsetY:${offsetY}`);
             const page = agentContext.getPage(pageID);
             if (!page) {
                 throw new Error('Page not found');
@@ -89,32 +92,39 @@ export async function createServer(): Promise<{ server: McpServer; browserAgent:
     
             if (selector) {
                 let element;
-                // switch (selector.selectorType) {
-                //     case "css":
-                //         element = await page.$(selector.selector);
-                //         break;
-                //     case "xpath":
-                //         const elements = await page.$$(selector.selector);
-                //         element = elements[0]; // 取第一个匹配的元素
-                //         break;
-                //     case "byLabel":
-                //         element = await page.getByLabel(selector.selector);
-                //         break;
-                //     case "byPlaceHolder":
-                //         element = await page.getByPlaceholder(selector.selector);
-                //         break;
-                //     case "byText":
-                //         element = await page.getByText(selector.selector);
-                //         break;
-                //     case "byTitle":
-                //         element = await page.getByTitle(selector.selector);
-                //         break;
-                //     case "byAltText":
-                //         element = await page.getByAltText(selector.selector);
-                //         break;
-                // }
+                // 打印 selector 和 selectorType 实际值
+                logger.error("selector:", { value: selector }); 
+                logger.error("selectorType:", { value: selectorType }); 
+                switch (selectorType) {
+                    case "css|xpath":
+                        element = await page.$(selector);
+                        // const elements = await page.$$(selector);
+                        // element = elements[0]; // 取第一个匹配的元素
+                        logger.error(`selectorType:${selectorType}`);         
+                        break;
+                    case "byLabel":
+                        element = await page.getByLabel(selector);
+                        logger.error(`selectorType:${selectorType}`);         
+                        break;
+                    case "byPlaceHolder":                        
+                        element = await page.getByPlaceholder(selector);
+                        logger.error(`selectorType:${selectorType}`);         
+                        break;
+                    case "byText":
+                        element = await page.getByText(selector);
+                        logger.error(`selectorType:${selectorType}`);         
+                        break;
+                    case "byTitle":
+                        element = await page.getByTitle(selector);
+                        logger.error("selectorType:", "test:"+selectorType); 
+                        break;
+                    case "byAltText":
+                        element = await page.getByAltText(selector);
+                        logger.error("selectorType:", "test:"+selectorType); 
+                        break;
+                }
 
-                element = await page.$(selector);    
+                //element = await page.$(selector);
                 if (!element) {
                     throw new Error('Element not found');
                 }
@@ -123,13 +133,35 @@ export async function createServer(): Promise<{ server: McpServer; browserAgent:
                 if (!boundingBox) {
                     throw new Error('Could not get element bounding box');
                 }
+
+                width = width || boundingBox.width;
+                height = height || boundingBox.height;
+
+                // 检查 width 和 height 是否超出页面范围
+                // 获取视口尺寸并检查是否存在
+                const viewportSize = page.viewportSize();
+                if (viewportSize) {
+                    logger.error(`viewportSize:${JSON.stringify(viewportSize)}`);
+                    // 检查 width 是否超出页面范围
+                    if (boundingBox.x + width > viewportSize.width) {
+                        width = Math.min(viewportSize.width - boundingBox.x, width);
+                    }
+                    // 检查 height 是否超出页面范围
+                    if (boundingBox.y + height > viewportSize.height) {
+                        height = Math.min(viewportSize.height - boundingBox.y, height);
+                    }
+                }
+                else{
+                    logger.error(`viewportSize: is null`);
+                }
+
     
                 // 计算截图区域
                 const clip = {
                     x: boundingBox.x + (offsetX || 0),
                     y: boundingBox.y + (offsetY || 0),
-                    width: width || boundingBox.width,
-                    height: height || boundingBox.height,
+                    width: width,
+                    height: height,
                 };
                 screenshotOptions.clip = clip;
             } else {

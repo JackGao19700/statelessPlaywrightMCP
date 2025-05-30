@@ -1,3 +1,13 @@
+#!/usr/bin/env node
+import dotenv from 'dotenv';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const envFile = path.resolve(__dirname, '../.env');
+const result = dotenv.config({ path: envFile });
+
 import winston from 'winston';
 import type { Logger, transport } from 'winston';
 
