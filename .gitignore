@@ -1,9 +1,9 @@
 # envoriment variables (.env)
 .env
 .env.local
-tmpdir/html/*
-tmpdir/images/*
-tmpdir/logs/*
+# tmpdir/html/*
+# tmpdir/images/*
+# tmpdir/logs/*
 
 # authorization files
 .auth
