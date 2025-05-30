@@ -1,7 +1,6 @@
 # envoriment variables (.env)
 .env
 .env.local
-remoteChrome.bat
 images/
 tmpdir/
 resources/
