@@ -1,9 +1,9 @@
 # envoriment variables (.env)
 .env
 .env.local
-images/
-tmpdir/
-resources/
+tmpdir/html/*
+tmpdir/images/*
+tmpdir/logs/*
 
 # authorization files
 .auth
@@ -12,7 +12,6 @@ resources/
 chrome_debug
 
 # Logs
-logs
 *.log
 npm-debug.log*
 yarn-debug.log*
