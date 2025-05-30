@@ -1,3 +1,7 @@
+
+import { build } from 'esbuild';
+import vm from 'vm';
+
 import { Page } from 'playwright';
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
@@ -18,7 +22,41 @@ import { AgentInterface, remoteAgent } from './loginUtils.js';
 import { AgentContext } from './AgentContext.js';
 
 
-const Extern_Script_Path=process.env.EXTERN_SCRIPT_PATH??path.resolve(__dirname,"../externScripts");
+const Extern_Script_Path=process.env.EXTERN_SCRIPT_PATH??path.resolve(__dirname,"src/externScripts/");
+
+
+// 动态编译并执行 TypeScript 代码的辅助函数
+async function compileAndRunTS(scriptFilePath: string, options: any) {
+    const result = await build({
+        entryPoints: [scriptFilePath],
+        write: false,
+        bundle: true,
+        format: 'esm',
+        platform: 'node',
+    });
+
+    const moduleCode = result.outputFiles[0].text;
+    const module = { exports: {} };
+    const context = {
+        require,
+        module,
+        exports: module.exports,
+        __dirname,
+        __filename,
+    };
+
+    const script = new vm.Script(moduleCode);
+    script.runInNewContext(context);
+
+    // 使用类型断言
+    const moduleExports = context.module.exports as { run: (options: any) => Promise<string> };
+    if (typeof moduleExports.run !== 'function') {
+        throw new Error('脚本必须导出一个 `run` 函数');
+    }
+
+    return moduleExports.run(options);
+}
+
 
 async function getBrowserAgent(): Promise<AgentInterface> {
     const hostUrl = `http://${process.env.REMOTE_BROWSER_HOST ?? "localhost"}`;
@@ -475,6 +513,37 @@ export async function createServer(): Promise<{ server: McpServer; browserAgent:
           }
     });
   
+    // 14.B run playwright code
+    server.tool("runPlaywrightWebCodeJIT", "run playwright web auto code stored in a .ts file. The .ts code must follow externScripts/scriptTemplate.ts.", {
+        scriptFile: z.string().describe(`The .ts file of playwright web auto code script file. The file path is relative to ${Extern_Script_Path}`)
+    }, async ({ scriptFile }) => {
+        try {
+            const scriptFilePath = path.join(Extern_Script_Path, scriptFile);
+    
+            const jsonString = await compileAndRunTS(scriptFilePath, {
+                browser: browserAgent.getBrowser(),
+                context: browserAgent.getContext(),
+                page: agentContext.getCurrentPage(),
+                customData: { userId: 123 }, // 可选自定义参数
+            });
+    
+            // 解析 JSON
+            const result = JSON.parse(jsonString);
+            console.error('脚本执行结果:', result);
+            return {
+                content: [
+                    {
+                        type: "text",
+                        text: JSON.stringify({ isCodeRun: true, codeRunResult: result }),
+                    },
+                ],
+            };
+        } catch (error) {
+            console.error('执行脚本失败:', error);
+            throw error;
+        }
+    });
+      
 
     // 14.saveLinkImage 工具
     server.tool("saveLinkImage", "save the images specied in selector on page", {

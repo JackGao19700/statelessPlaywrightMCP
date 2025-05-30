@@ -27,6 +27,7 @@
     "@jackgao/playwrightmcp": "file:",
     "@modelcontextprotocol/sdk": "^1.10.1",
     "dotenv": "^16.5.0",
+    "esbuild": "^0.25.5",
     "express": "^5.1.0",
     "playwright": "^1.52.0",
     "ts-node": "^10.9.2",
