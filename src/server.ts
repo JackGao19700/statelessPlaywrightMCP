@@ -21,10 +21,6 @@ import { logger } from './logger.js';
 import { AgentInterface, remoteAgent } from './loginUtils.js';
 import { AgentContext } from './AgentContext.js';
 
-
-const Extern_Script_Path=process.env.EXTERN_SCRIPT_PATH??path.resolve(__dirname,"src/externScripts/");
-
-
 // 动态编译并执行 TypeScript 代码的辅助函数
 async function compileAndRunTS(scriptFilePath: string, options: any) {
     const result = await build({
@@ -96,16 +92,14 @@ export async function createServer(): Promise<{ server: McpServer; browserAgent:
         if (!url) {
             throw new Error("url is required.");
         }
-        const page = await browserAgent.getNewPage();
+        const page = await agentContext.getCurrentPage();
         await page.goto(url);
-        agentContext.setCurrentPage(page);
-        const pageID = agentContext.getPageID(page);
         return {
             content: [
                 {
                     type: "text",
                     // 将 JSON 对象转换为字符串,返回.
-                    text: JSON.stringify({ pageID, pageUrl: url }),
+                    text: JSON.stringify({pageUrl: url }),
                 },
             ],
         };
@@ -115,17 +109,16 @@ export async function createServer(): Promise<{ server: McpServer; browserAgent:
         "snapshot",
         "Take a screenshot of a page or an element",
         {
-            pageID: z.number().int().nonnegative().optional().describe("The index of the page to take a screenshot. If ignored or 0, use the current page."),
-            selector: z.string().describe("The selector for the element to screenshot. If null, screenshot the whole page."),
+            selector: z.string().optional().describe("The selector for the element to screenshot. If null, screenshot the whole page."),
             width: z.number().optional().describe("The width of the screenshot. If null, use the element's width or viewport width."),
             height: z.number().optional().describe("The height of the screenshot. If null, use the element's height or viewport height."),
             offsetX: z.number().optional().describe("The horizontal offset from the top-left corner of the element or page. If null, default to 0."),
             offsetY: z.number().optional().describe("The vertical offset from the top-left corner of the element or page. If null, default to 0."),
         },
-        async ({ pageID = 0, selector,width, height, offsetX = 0, offsetY = 0 }) => {
-            const page = agentContext.getPage(pageID);
+        async ({selector,width, height, offsetX = 0, offsetY = 0 }) => {
+            const page = await agentContext.getCurrentPage();
             if (!page) {
-                throw new Error('Page not found');
+                throw new Error('No page opened.');
             }
     
             const imageUniqueName = randomUUID();
@@ -195,24 +188,23 @@ export async function createServer(): Promise<{ server: McpServer; browserAgent:
     
             // 获取 browserAgent 上下文中的所有页面
             const browserPages = browserContext.pages();
-            let pageIndex: number = 1;
+            const currentPage = await agentContext.getCurrentPage();
+
+            let currentPageIndex: number = 0;
             for (const browserPage of browserPages) {
                 // 移除不必要的 await
                 const url = browserPage.url(); 
-                pagesInfo.push({ url, pageIndex });
-                pageIndex++;
+                pagesInfo.push({ url });
+                if (browserPage === currentPage) {
+                    currentPageIndex = pagesInfo.length - 1;
+                }                
             }
-            let currentPageID: number | null = null;
-            const currentPage = agentContext.getCurrentPage();
-            if (currentPage) {
-                currentPageID = agentContext.getPageID(currentPage);
-            }
-    
+            
             return {
                 content: [
                     {
                         type: "text",
-                        text: JSON.stringify({ pagesInfo, currentPageID }),
+                        text: JSON.stringify({ pagesInfo, currentPageIndex }),
                     },
                 ],
             };
@@ -224,13 +216,12 @@ export async function createServer(): Promise<{ server: McpServer; browserAgent:
         "click",
         "Click an element on the page",
         {
-            pageID: z.number().int().nonnegative().optional().describe("The index of the page where the element is located. If ignored or 0, use the current page."),
             selector: z.string().describe("CSS selector for the element to click")
         },
-        async ({ pageID = 0, selector }) => {
-            const timeOutMSeconds: number = Number(process.env.TIMEOUT_MSECOND_FOR_NEW_PAGE) || 2000;
+        async ({selector }) => {
+            const timeOutMSeconds: number = Number(process.env.TIMEOUT_MSECOND_FOR_NEW_PAGE) || 2000;            
     
-            const page = agentContext.getPage(pageID);
+            const page = await agentContext.getCurrentPage();
             if (!page) {
                 throw new Error('Page not found');
             }
@@ -260,14 +251,16 @@ export async function createServer(): Promise<{ server: McpServer; browserAgent:
             }
     
             if (newPage) {
+                // 这种情况下，需啊哟移除以前的page.
+                await agentContext.setCurrentPage(newPage);
+
                 // 移除不必要的 await
                 const newPageUrl = newPage.url(); 
-                const newPageID = agentContext.getPageID(newPage);
                 return {
-                    content: [
+                        content: [
                         {
                             type: "text",
-                            text: JSON.stringify({ message: "A new page is generated after clicking", newPage: { pageID: newPageID, pageUrl: newPageUrl } }),
+                            text: JSON.stringify({ message: "A new page is generated after clicking", newPage: { pageUrl: newPageUrl } }),
                         },
                     ],
                 };
@@ -286,11 +279,10 @@ export async function createServer(): Promise<{ server: McpServer; browserAgent:
     
     // 5. fill 工具
     server.tool("fill", "fill out an input field", {
-        pageID: z.number().int().nonnegative().optional().describe("The index of the page where the input field is located. If ignored or 0, use the current page."),
         selector: z.string().describe("CSS selector for input field"),
         value: z.string().describe("Value to fill"),
-    }, async ({ pageID = 0, selector, value }) => {
-        const page = agentContext.getPage(pageID);
+    }, async ({selector, value }) => {
+        const page = await agentContext.getCurrentPage();
         if (!page) {
             throw new Error('Page not found');
         }
@@ -310,11 +302,10 @@ export async function createServer(): Promise<{ server: McpServer; browserAgent:
     });
     // 6. select 工具
     server.tool("select", "Select an element on the page with Select tag", {
-        pageID: z.number().int().nonnegative().optional().describe("The index of the page where the select element is located. If ignored or 0, use the current page."),
         selector: z.string().describe("CSS selector for element to select"),
         value: z.string().describe("Value to select"),
-    }, async ({ pageID = 0, selector, value }) => {
-        const page = agentContext.getPage(pageID);
+    }, async ({selector, value }) => {
+        const page = await agentContext.getCurrentPage();
         if (!page) {
             throw new Error('Page not found');
         }
@@ -334,10 +325,9 @@ export async function createServer(): Promise<{ server: McpServer; browserAgent:
     });
     // 7. hover 工具
     server.tool("hover", "Hover an element on the page", {
-        pageID: z.number().int().nonnegative().optional().describe("The index of the page where the element is located. If ignored or 0, use the current page."),
         selector: z.string().describe("CSS selector for element to hover"),
-    }, async ({ pageID = 0, selector }) => {
-        const page = agentContext.getPage(pageID);
+    }, async ({ selector }) => {
+        const page = await agentContext.getCurrentPage();
         if (!page) {
             throw new Error('Page not found');
         }
@@ -357,10 +347,9 @@ export async function createServer(): Promise<{ server: McpServer; browserAgent:
     });
     // 8. evaluate 工具
     server.tool("evaluate", "Execute JavaScript in the browser console", {
-        pageID: z.number().int().nonnegative().optional().describe("The index of the page to execute the JavaScript code. If ignored or 0, use the current page."),
         script: z.string().describe("JavaScript code to execute"),
-    }, async ({ pageID = 0, script }) => {
-        const page = agentContext.getPage(pageID);
+    }, async ({ script }) => {
+        const page = await agentContext.getCurrentPage();
         if (!page) {
             throw new Error('Page not found');
         }
@@ -374,29 +363,13 @@ export async function createServer(): Promise<{ server: McpServer; browserAgent:
             ],
         };
     });
-    // 9. closePage 工具
-    server.tool("closePage", "Close the page and release related resources.If close the current page, the current page will be null.", {
-        pageID: z.number().int().nonnegative().optional().describe("The index of page to close"),
-    }, async ({ pageID = 0 }) => {
-        const sucessClose = await agentContext.removePage(pageID);
-        if (!sucessClose) {
-            throw new Error('Page not found');
-        }
-        return {
-            content: [
-                {
-                    type: "text",
-                    text: JSON.stringify({ message: "Page closed successfully" }),
-                },
-            ],
-        };
-    });
-    // 10. getTexts 工具
+    
+    // 9. getTexts 工具
     server.tool("getTexts", "get all human readable texts of elements on page", {
-        pageID: z.number().int().nonnegative().optional().describe("The index of page from which to retrieve texts. If ignored or 0, use the current page."),
         selector: z.string().describe("CSS selector for the element to get texts"),
-    }, async ({ pageID = 0, selector }) => {
-        const page = agentContext.getPage(pageID);
+    }, async ({selector }) => {
+        const page = await agentContext.getCurrentPage();
+
         if (!page) {
             throw new Error('Page not found');
         }
@@ -415,12 +388,13 @@ export async function createServer(): Promise<{ server: McpServer; browserAgent:
             ],
         };
     });
-    // 11. getHTML 工具
+
+    // 10. getHTML 工具
     server.tool("getHTML", "Get the HTML content specified by selector. If selector is null, return whole html of the page", {
-        pageID: z.number().int().nonnegative().optional().describe("The index of page from which to to retrieve HTML. If ignored or 0, use the current page."),
         selector: z.string().optional().describe("CSS selector for the element to get HTML texts. Or HTML text of the page if null.")
-    }, async ({ pageID = 0, selector }) => {
-        const page = agentContext.getPage(pageID);
+    }, async ({ selector }) => {
+        const page = await agentContext.getCurrentPage();
+
         if (!page) {
             throw new Error('Page not found');
         }
@@ -444,16 +418,31 @@ export async function createServer(): Promise<{ server: McpServer; browserAgent:
             ],
         };
     });
-    // 12. focusPage 工具
+
+    // 11. focusPage 工具
     server.tool("focusPage", "set the specified page as the current page and let it to be visible in the browser", {
-        pageID: z.number().int().positive().describe("The index of page to focus and set as the current page."),
-    }, async ({ pageID }) => {
-        const page = agentContext.getPage(pageID);
+        urlSubstring: z.string().describe("The sub-string of url of the page to focus and set as the current page."),
+    }, async ({urlSubstring}) => {
+        const browserPages=browserAgent.getContext()?.pages();
+        if (!browserPages) {
+            throw new Error('Browser context not found');
+        }
+
+        let page: Page | null = null;
+        for (const browserPage of browserPages) {
+            const url = browserPage.url();
+            if (url.includes(urlSubstring)) {
+                page = browserPage;
+                break;
+            }
+        }
         if (!page) {
             throw new Error('Page not found');
         }
+
         await page.bringToFront();
-        agentContext.setCurrentPage(page);
+        await agentContext.setCurrentPage(page);
+
         return {
             content: [
                 {
@@ -464,9 +453,9 @@ export async function createServer(): Promise<{ server: McpServer; browserAgent:
         };
     });
 
-    // 14.run playwright code
-      server.tool("runPlaywrightWebCode", "run playwright web auto code stored in a .ts file. The .ts code must follow externScripts/scriptTemplate.ts.", {
-        scriptFile: z.string().describe(`The .ts file of playwright web auto code script file. The file path is relative to ${Extern_Script_Path}`)
+    // 12.run playwright code
+      server.tool("runCompiledPlaywrightCode", "run playwright web auto code stored in a .ts file. The .ts code must follow externScripts/scriptTemplate.ts.", {
+        scriptFile: z.string().describe(`The .ts file of playwright web auto code script file. The file path is relative to src/externScripts/}`)
     }, async ({ scriptFile }) => {
         try{
             // 将 .ts 替换为 .js
@@ -513,12 +502,14 @@ export async function createServer(): Promise<{ server: McpServer; browserAgent:
           }
     });
   
-    // 14.B run playwright code
-    server.tool("runPlaywrightWebCodeJIT", "run playwright web auto code stored in a .ts file. The .ts code must follow externScripts/scriptTemplate.ts.", {
-        scriptFile: z.string().describe(`The .ts file of playwright web auto code script file. The file path is relative to ${Extern_Script_Path}`)
+    // 13. run playwright code JIT.
+    server.tool("runCompiledPlaywrightCodeJIT", "Compile .ts source file and run it. Source code must follow externScripts/scriptTemplate.ts.", {
+        scriptFile: z.string().describe(`The .ts file of playwright web auto code script file. The file path is relative to src/externScripts/}`)
     }, async ({ scriptFile }) => {
         try {
-            const scriptFilePath = path.join(Extern_Script_Path, scriptFile);
+            // 构建编译后的文件路径
+            const projectRoot = path.resolve(__dirname, '../src/externScripts/');            
+            const scriptFilePath = path.join(projectRoot,scriptFile);
     
             const jsonString = await compileAndRunTS(scriptFilePath, {
                 browser: browserAgent.getBrowser(),
@@ -547,17 +538,18 @@ export async function createServer(): Promise<{ server: McpServer; browserAgent:
 
     // 14.saveLinkImage 工具
     server.tool("saveLinkImage", "save the images specied in selector on page", {
-        pageID: z.number().int().nonnegative().optional().describe("The index of page from which to fetch images for saving. If ignored or 0, use the current page."),
         selector: z.string().describe("the image element's selector in page"),
-    }, async ({ pageID = 0, selector }) => {
-        const page = agentContext.getPage(pageID);
+    }, async ({ selector }) => {
+        const page = await agentContext.getCurrentPage();
         if (!page) {
             throw new Error('Page not found');
         }
+
         const element = await page.$(selector);
         if (!element) {
             throw new Error('Image element not found');
         }
+
         // 检查元素是否为 <img> 标签
         const tagName = await element.evaluate(el => el.tagName.toLowerCase());
         if (tagName !== 'img') {
@@ -567,12 +559,14 @@ export async function createServer(): Promise<{ server: McpServer; browserAgent:
         if (!imageUrl) {
             throw new Error('Image URL not found');
         }
+
         const imageUUID = randomUUID();
         const imagesDir = await AgentContext.getImagesDir();
         const imagePath = path.join(imagesDir, `${imageUUID}.png`);
         try {
-            const response = await page.goto(imageUrl);
-            if (!response || !response.ok()) {
+            // 使用 page.request.fetch 直接下载图片
+            const response = await page.request.fetch(imageUrl);
+            if (!response.ok()) {
                 throw new Error('Failed to fetch image');
             }
             const buffer = await response.body();
@@ -594,12 +588,14 @@ export async function createServer(): Promise<{ server: McpServer; browserAgent:
             ],
         };
     });
+
     // 异步函数，用于读取 HTML 模板文件
     async function readHtmlTemplate(fileName: string): Promise<string> {
         const resourcesPath = await AgentContext.getResourcesDir(); // 使用 await 等待异步操作
         const templatePath = path.join(resourcesPath, fileName);
         return fs.readFile(templatePath, 'utf-8');
     }
+    
     //15. 在浏览器中展示本地文件
     server.tool(
         "showLocalFile",
@@ -639,15 +635,14 @@ export async function createServer(): Promise<{ server: McpServer; browserAgent:
                     url = `file:///${filePath.replace(/\\/g, '/')}`;
                 }
     
-                const page = await browserAgent.getNewPage();        
-                await page.goto(url);
-                const pageID = agentContext.getPageID(page);
+                const page = await agentContext.getCurrentPage();
+                await page.goto(url);                
     
                 return {
                     content: [
                         {
                             type: "text",
-                            text: JSON.stringify({ pageID, pageUrl: url }),
+                            text: JSON.stringify({ pageUrl: url }),
                         },
                     ],
                 };

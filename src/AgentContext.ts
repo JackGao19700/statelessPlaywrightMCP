@@ -40,27 +40,30 @@ export class AgentContext {
     this.currentPage = null;
   }
 
-  getCurrentPage(): Page|null {
-    return this.currentPage; 
-  }
-  setCurrentPage(page: Page|null): void {
-    this.currentPage = page;
-  }
-  // 根据 pageUUID 获取页面
-  getPage(pageID: number): Page | null {
-    //pageIndex 从1开始计数. 所以需要减1.
-    if(pageID==0) {
-      return this.currentPage; 
-    }else if(pageID<0 || pageID>this.context.pages().length) {
-      return null;    
-    }else{
-      return this.context.pages()[pageID-1];
+  async getCurrentPage(): Promise<Page> {
+    if(!this.currentPage) {
+      const pages = this.context.pages();
+      if (pages.length === 0){
+        try {
+          this.currentPage = await this.context.newPage();
+        } catch (error) {
+          throw new Error('Failed to create a new page in the browser context');
+        }
+      }
+      else {
+        this.currentPage = pages[0];
+      }
     }
+    return this.currentPage!; 
   }
 
-  getPageID(page: Page): number {
-    //pageIndex 从1开始计数.pageIndex为0时，表示当前页面.
-    return this.context.pages().indexOf(page)+1; 
+  async setCurrentPage(page:Page): Promise<void> {
+    for (const p of this.context.pages()) {
+      if (p !== page) {
+        await p.close();
+      }
+    }
+    this.currentPage = page;
   }
 
   // 销毁所有资源
@@ -94,31 +97,14 @@ export class AgentContext {
       : path.resolve(__dirname, '../resources');
     
     return await createDirIfNotExists(imagesDir);
+  }  
+
+  static async getExternalScriptsDir(): Promise<string> {
+    // 优先使用环境变量中的路径
+    const externScriptDir=process.env.EXTERN_SCRIPT_PATH
+    ? path.resolve(process.env.EXTERN_SCRIPT_PATH)
+    :path.resolve(__dirname,"src/externScripts/");
+
+    return await createDirIfNotExists(externScriptDir);
   }
-
-  // 新增方法，获取所有页面的 UUID 和页面实例
-  getPages():Array<Page> {
-    return this.context.pages();
-  }
-
-  async removePage(pageID: number): Promise<boolean> {
-    const page = this.getPage(pageID);
-    if (!page) {
-      return false;
-    }
-
-    try {
-      // 关闭页面以释放资源
-      if (page === this.currentPage) {
-        this.setCurrentPage(null);
-      }
-      await page.close();
-      return true;
-      
-    } catch (error) {
-      console.error(`Failed to close page with ID ${pageID}:`, error);
-      return false;
-    }
-  }
-
 }
