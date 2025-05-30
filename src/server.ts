@@ -4,10 +4,12 @@ import { z } from "zod";
 import { randomUUID } from 'crypto';
 import fs from 'fs/promises';
 import path from 'path';
+
 import { logger } from './logger.js';
 import { AgentInterface, remoteAgent } from './loginUtils.js';
 import { AgentContext } from './AgentContext.js';
-async function getBrowserAgent() {
+
+async function getBrowserAgent(): Promise<AgentInterface> {
     const hostUrl = `http://${process.env.REMOTE_BROWSER_HOST ?? "localhost"}`;
     const remoteBrowserPort = Number(process.env.REMOTE_BROWSER_PORT) || 9222;
     try {
@@ -19,7 +21,7 @@ async function getBrowserAgent() {
         throw error;
     }
 }
-export async function createServer() {
+export async function createServer(): Promise<{ server: McpServer; browserAgent: AgentInterface }> {
     let browserAgent;
     try {
         browserAgent = await getBrowserAgent();
@@ -65,11 +67,7 @@ export async function createServer() {
         "Take a screenshot of a page or an element",
         {
             pageID: z.number().int().nonnegative().optional().describe("The index of the page to take a screenshot. If ignored or 0, use the current page."),
-            // 定义复合类型
-            selector: z.object({
-                selectorType: z.enum(["css", "xpath", "byLabel", "byPlaceHolder", "byText", "byTitle", "byAltText"]),
-                selector: z.string()
-            }).optional().describe("The selector of the element to screenshot. If null, screenshot the whole page."),
+            selector: z.string().optional().describe("The selector of the element to screenshot. If null, screenshot the whole page."),
             width: z.number().optional().describe("The width of the screenshot. If null, use the element's width or viewport width."),
             height: z.number().optional().describe("The height of the screenshot. If null, use the element's height or viewport height."),
             offsetX: z.number().optional().describe("The horizontal offset from the top-left corner of the element or page. If null, default to 0."),
@@ -87,35 +85,36 @@ export async function createServer() {
             const snapshotImage = path.join(imagesDir, `${imageUniqueName}.png`);
     
             // 明确 screenshotOptions 类型
-            let screenshotOptions: { path: string; clip?: { x: number; y: number; width: number; height: number } } = { path: snapshotImage };
+            let screenshotOptions: Parameters<Page['screenshot']>[0] = { path: snapshotImage };
     
             if (selector) {
                 let element;
-                switch (selector.selectorType) {
-                    case "css":
-                        element = await page.$(selector.selector);
-                        break;
-                    case "xpath":
-                        const elements = await page.$$(selector.selector);
-                        element = elements[0]; // 取第一个匹配的元素
-                        break;
-                    case "byLabel":
-                        element = await page.getByLabel(selector.selector);
-                        break;
-                    case "byPlaceHolder":
-                        element = await page.getByPlaceholder(selector.selector);
-                        break;
-                    case "byText":
-                        element = await page.getByText(selector.selector);
-                        break;
-                    case "byTitle":
-                        element = await page.getByTitle(selector.selector);
-                        break;
-                    case "byAltText":
-                        element = await page.getByAltText(selector.selector);
-                        break;
-                }
-    
+                // switch (selector.selectorType) {
+                //     case "css":
+                //         element = await page.$(selector.selector);
+                //         break;
+                //     case "xpath":
+                //         const elements = await page.$$(selector.selector);
+                //         element = elements[0]; // 取第一个匹配的元素
+                //         break;
+                //     case "byLabel":
+                //         element = await page.getByLabel(selector.selector);
+                //         break;
+                //     case "byPlaceHolder":
+                //         element = await page.getByPlaceholder(selector.selector);
+                //         break;
+                //     case "byText":
+                //         element = await page.getByText(selector.selector);
+                //         break;
+                //     case "byTitle":
+                //         element = await page.getByTitle(selector.selector);
+                //         break;
+                //     case "byAltText":
+                //         element = await page.getByAltText(selector.selector);
+                //         break;
+                // }
+
+                element = await page.$(selector);    
                 if (!element) {
                     throw new Error('Element not found');
                 }
