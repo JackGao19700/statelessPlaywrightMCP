@@ -3,11 +3,22 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { randomUUID } from 'crypto';
 import fs from 'fs/promises';
+import 'ts-node/register';
 import path from 'path';
+import { pathToFileURL,fileURLToPath } from 'url';
+
+import { dirname } from 'path';
+
+// 获取 __dirname 等效值
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 
 import { logger } from './logger.js';
 import { AgentInterface, remoteAgent } from './loginUtils.js';
 import { AgentContext } from './AgentContext.js';
+
+
+const Extern_Script_Path=process.env.EXTERN_SCRIPT_PATH??path.resolve(__dirname,"../externScripts");
 
 async function getBrowserAgent(): Promise<AgentInterface> {
     const hostUrl = `http://${process.env.REMOTE_BROWSER_HOST ?? "localhost"}`;
@@ -67,16 +78,13 @@ export async function createServer(): Promise<{ server: McpServer; browserAgent:
         "Take a screenshot of a page or an element",
         {
             pageID: z.number().int().nonnegative().optional().describe("The index of the page to take a screenshot. If ignored or 0, use the current page."),
-            selector: z.string().optional().describe("The selector of the element to screenshot. If null, screenshot the whole page."),
-            selectorType: z.enum(["css|xpath","byLabel", "byPlaceHolder", "byText", "byTitle", "byAltText"]).optional()
-                .describe("The type of the selector to use, availale options are 'css|xpath', 'byLabel', 'byPlaceHolder', 'byText', 'byTitle', 'byAltText'. If null, use default option 'css|xpath'."),
+            selector: z.string().describe("The selector for the element to screenshot. If null, screenshot the whole page."),
             width: z.number().optional().describe("The width of the screenshot. If null, use the element's width or viewport width."),
             height: z.number().optional().describe("The height of the screenshot. If null, use the element's height or viewport height."),
             offsetX: z.number().optional().describe("The horizontal offset from the top-left corner of the element or page. If null, default to 0."),
             offsetY: z.number().optional().describe("The vertical offset from the top-left corner of the element or page. If null, default to 0."),
         },
-        async ({ pageID = 0, selector,selectorType="css|xpath", width, height, offsetX = 0, offsetY = 0 }) => {
-            logger.error(`snapshot para---pageID:${pageID},selector:${selector},selectorType:${selectorType},width:${width},height:${height},offsetX:${offsetX},offsetY:${offsetY}`);
+        async ({ pageID = 0, selector,width, height, offsetX = 0, offsetY = 0 }) => {
             const page = agentContext.getPage(pageID);
             if (!page) {
                 throw new Error('Page not found');
@@ -91,40 +99,7 @@ export async function createServer(): Promise<{ server: McpServer; browserAgent:
             let screenshotOptions: Parameters<Page['screenshot']>[0] = { path: snapshotImage };
     
             if (selector) {
-                let element;
-                // 打印 selector 和 selectorType 实际值
-                logger.error("selector:", { value: selector }); 
-                logger.error("selectorType:", { value: selectorType }); 
-                switch (selectorType) {
-                    case "css|xpath":
-                        element = await page.$(selector);
-                        // const elements = await page.$$(selector);
-                        // element = elements[0]; // 取第一个匹配的元素
-                        logger.error(`selectorType:${selectorType}`);         
-                        break;
-                    case "byLabel":
-                        element = await page.getByLabel(selector);
-                        logger.error(`selectorType:${selectorType}`);         
-                        break;
-                    case "byPlaceHolder":                        
-                        element = await page.getByPlaceholder(selector);
-                        logger.error(`selectorType:${selectorType}`);         
-                        break;
-                    case "byText":
-                        element = await page.getByText(selector);
-                        logger.error(`selectorType:${selectorType}`);         
-                        break;
-                    case "byTitle":
-                        element = await page.getByTitle(selector);
-                        logger.error("selectorType:", "test:"+selectorType); 
-                        break;
-                    case "byAltText":
-                        element = await page.getByAltText(selector);
-                        logger.error("selectorType:", "test:"+selectorType); 
-                        break;
-                }
-
-                //element = await page.$(selector);
+                const element = await page.$(selector);
                 if (!element) {
                     throw new Error('Element not found');
                 }
@@ -133,35 +108,13 @@ export async function createServer(): Promise<{ server: McpServer; browserAgent:
                 if (!boundingBox) {
                     throw new Error('Could not get element bounding box');
                 }
-
-                width = width || boundingBox.width;
-                height = height || boundingBox.height;
-
-                // 检查 width 和 height 是否超出页面范围
-                // 获取视口尺寸并检查是否存在
-                const viewportSize = page.viewportSize();
-                if (viewportSize) {
-                    logger.error(`viewportSize:${JSON.stringify(viewportSize)}`);
-                    // 检查 width 是否超出页面范围
-                    if (boundingBox.x + width > viewportSize.width) {
-                        width = Math.min(viewportSize.width - boundingBox.x, width);
-                    }
-                    // 检查 height 是否超出页面范围
-                    if (boundingBox.y + height > viewportSize.height) {
-                        height = Math.min(viewportSize.height - boundingBox.y, height);
-                    }
-                }
-                else{
-                    logger.error(`viewportSize: is null`);
-                }
-
     
                 // 计算截图区域
                 const clip = {
                     x: boundingBox.x + (offsetX || 0),
                     y: boundingBox.y + (offsetY || 0),
-                    width: width,
-                    height: height,
+                    width: width || boundingBox.width,
+                    height: height || boundingBox.height,
                 };
                 screenshotOptions.clip = clip;
             } else {
@@ -234,7 +187,7 @@ export async function createServer(): Promise<{ server: McpServer; browserAgent:
         "Click an element on the page",
         {
             pageID: z.number().int().nonnegative().optional().describe("The index of the page where the element is located. If ignored or 0, use the current page."),
-            selector: z.string().describe("CSS selector for the element to click"),
+            selector: z.string().describe("CSS selector for the element to click")
         },
         async ({ pageID = 0, selector }) => {
             const timeOutMSeconds: number = Number(process.env.TIMEOUT_MSECOND_FOR_NEW_PAGE) || 2000;
@@ -472,7 +425,58 @@ export async function createServer(): Promise<{ server: McpServer; browserAgent:
             ],
         };
     });
-    // 13.saveLinkImage 工具
+
+    // 14.run playwright code
+      server.tool("runPlaywrightWebCode", "run playwright web auto code stored in a .ts file. The .ts code must follow externScripts/scriptTemplate.ts.", {
+        scriptFile: z.string().describe(`The .ts file of playwright web auto code script file. The file path is relative to ${Extern_Script_Path}`)
+    }, async ({ scriptFile }) => {
+        try{
+            // 将 .ts 替换为 .js
+            const jsScriptFile = scriptFile.replace(/\.ts$/, '.js');
+            // 构建编译后的文件路径
+            const projectRoot = path.resolve(__dirname, '../');
+            const compiledScriptFilePath = path.join(
+                projectRoot,
+                'dist',
+                'externScripts',
+                jsScriptFile
+            );
+            const scriptFileUrl = pathToFileURL(compiledScriptFilePath).href;
+            logger.error(`imported script:${scriptFileUrl}`);
+
+            const scriptTS = await import(scriptFileUrl);
+            
+            if (typeof scriptTS.run !== 'function') {
+            throw new Error('脚本必须导出一个 `run` 函数');
+            }
+        
+            // 调用 run 并传入参数
+            const jsonString = await scriptTS.run({
+                browser:browserAgent.getBrowser(),
+                context:browserAgent.getContext(),
+                page:agentContext.getCurrentPage(),
+                customData: { userId: 123 }, // 可选自定义参数
+            });
+        
+            // 解析 JSON
+            const result = JSON.parse(jsonString);
+            console.error('脚本执行结果:', result);
+            return {
+                content: [
+                    {
+                        type: "text",
+                        text: JSON.stringify({ isCodeRun:true, codeRunResult:result}),
+                    },
+                ],
+            };    
+          } catch (error) {
+            console.error('执行脚本失败:', error);
+            throw error;
+          }
+    });
+  
+
+    // 14.saveLinkImage 工具
     server.tool("saveLinkImage", "save the images specied in selector on page", {
         pageID: z.number().int().nonnegative().optional().describe("The index of page from which to fetch images for saving. If ignored or 0, use the current page."),
         selector: z.string().describe("the image element's selector in page"),
@@ -527,7 +531,7 @@ export async function createServer(): Promise<{ server: McpServer; browserAgent:
         const templatePath = path.join(resourcesPath, fileName);
         return fs.readFile(templatePath, 'utf-8');
     }
-    //14. 在浏览器中展示本地文件
+    //15. 在浏览器中展示本地文件
     server.tool(
         "showLocalFile",
         "Display a specified local file in a new page",
