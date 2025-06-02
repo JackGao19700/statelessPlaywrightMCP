@@ -107,4 +107,13 @@ export class AgentContext {
 
     return await createDirIfNotExists(externScriptDir);
   }
+
+  static async getUserFlowJsonDir(): Promise<string> {
+    // 优先使用环境变量中的路径
+    const userFlowJsonDir=process.env.USER_FLOW_JSON_PATH
+    ? path.resolve(process.env.USER_FLOW_JSON_PATH)
+    :path.resolve(__dirname,"src/externScripts/");
+
+    return await createDirIfNotExists(userFlowJsonDir);
+  }  
 }

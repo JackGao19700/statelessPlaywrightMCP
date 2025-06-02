@@ -4,7 +4,7 @@ import vm from 'vm';
 
 import { Page } from 'playwright';
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { z } from "zod";
+import { boolean, z } from "zod";
 import { randomUUID } from 'crypto';
 import fs from 'fs/promises';
 import 'ts-node/register';
@@ -66,6 +66,355 @@ async function getBrowserAgent(): Promise<AgentInterface> {
         throw error;
     }
 }
+
+
+// 任务管理对象
+const playwrightTasks: {
+    [taskId: string]: {
+      status: 'pending' | 'completed' | 'failed';
+      result?: any;
+      error?: Error;
+    };
+  } = {};
+
+function preprocess(content: string, inputData: Record<string, any>): string {
+    return content.replace(/\$\{(\w+)\}/g, (match, key) => {
+      return inputData[key] !== undefined ? inputData[key] : match;
+    });
+}
+
+
+async function replay(userFlowfileName: string,inputData:Record<string,any>,page: Page,agentContext:AgentContext,taskId:string): Promise<boolean> {
+    if (!page)
+        return false;
+
+    const userFlowfilePath = path.join(
+        await AgentContext.getUserFlowJsonDir(),
+        userFlowfileName
+    );
+
+    try {
+      const content = preprocess(await fs.readFile(userFlowfilePath, 'utf-8'),inputData);
+      const actions = JSON.parse(content);
+      const steps = actions.steps || [];
+
+      let stepCount = 0;
+      for (const step of steps) {
+        const actionType = step.type;
+        const selectors = step.selectors || [];
+        const timeout = step.timeout || 5000; // 默认超时时间 5 秒
+        const assertedEvents = step.assertedEvents || [];
+
+        let selectedSelector: string | null = null;
+        let selectedElement: any = null;
+
+        try {
+          // 循环尝试每个选择器
+          for (const selectorItem of selectors) {            
+            let selector:string;
+            // 检查 selectorItem 是否为数组
+            if (Array.isArray(selectorItem)) {
+                selector = selectorItem[0];
+              } else {
+                selector = selectorItem;
+            }
+
+            // 跳过 aria 选择器
+            if (selector.startsWith('aria') || selector.startsWith('pierce') || selector.startsWith('text')) {
+              continue;
+            }else if(selector.startsWith('xpath')){
+                // 修正 XPath 选择器格式
+                selector = `xpath=${selector.slice(6)}`;  
+            }else{
+                // 修正 CSS 选择器格式 
+                // selector = `css=${selector}`;
+            }
+
+
+            try {
+              // 检查元素是否存在
+              selectedElement = await page.locator(selector);
+              if (selectedElement) {
+                selectedSelector = selector;
+                break;
+              }
+            } catch (error) {
+              // 忽略错误，尝试下一个选择器
+              logger.error(`step<${stepCount}>:Error checking selector ${selector}:`, error);
+              continue;
+            }
+            logger.error(`Selector ${selector} not found at step<${stepCount}>. Trying next selector...`);
+          }
+
+          if (selectors.length !== 0 && !selectedSelector) {
+            throw new Error(`No valid selector found for this step<${stepCount}>: ${JSON.stringify(step)}`);
+          }
+
+          switch (actionType) {
+            case 'navigate': {
+              const url = step.url;
+              logger.info(`Navigating to ${url}`);
+              await page.goto(url, { timeout });
+              break;
+            }
+            case 'click': {
+              const { offsetX = 0, offsetY = 0 } = step;
+              logger.info(`Clicking on ${selectedSelector} at offset (${offsetX}, ${offsetY})`);
+
+              if(selectedElement==null ||selectedSelector==null){
+                throw new Error(`No valid selector found for this step<${stepCount}>: ${JSON.stringify(step)}`);
+              }
+
+              await selectedElement.click({ timeout, position: { x: offsetX, y: offsetY } });
+              break;
+            }
+            case 'doubleClick': {
+              const { offsetX = 0, offsetY = 0 } = step;
+              logger.info(`Double clicking on ${selectedSelector} at offset (${offsetX}, ${offsetY})`);
+
+              if(selectedElement==null ||selectedSelector==null){
+                throw new Error(`No valid selector found for this step<${stepCount}>: ${JSON.stringify(step)}`);
+              }
+
+              await selectedElement.dblclick({ timeout, position: { x: offsetX, y: offsetY } });
+              break;
+            }
+            case 'change': {
+              const value = step.value;
+              logger.info(`Changing value of ${selectedSelector} to ${value}`);
+
+              if(selectedElement==null ||selectedSelector==null){
+                throw new Error(`No valid selector found for this step<${stepCount}>: ${JSON.stringify(step)}`);
+              }
+
+              await selectedElement.fill(value, { timeout });              
+              break;
+            }
+            case 'close':
+              logger.info('Closing the page');
+              await page.close({ runBeforeUnload: false });
+              break;
+            case 'customStep': {
+              const { name, parameters } = step;
+              logger.info(`Executing custom step: ${name} with parameters: ${JSON.stringify(parameters)}`);
+              // 自定义步骤需要根据实际情况实现
+              break;
+            }
+            case 'hover':{
+              logger.info(`Hovering over ${selectedSelector}`);
+
+              if(selectedElement==null ||selectedSelector==null){
+                throw new Error(`No valid selector found for this step<${stepCount}>: ${JSON.stringify(step)}`);
+              }
+
+              await selectedElement.hover({ timeout });
+              break;
+            }
+            case 'keyDown':{
+              const key = step.key;
+              logger.info(`Pressing key ${key}`);
+              await page.keyboard.down(key);
+              break;
+            }
+            case 'keyUp': {
+              const key = step.key;
+              logger.info(`Releasing key ${key}`);
+              await page.keyboard.up(key);
+              break;
+            }
+            case 'scroll': {
+              const { x = 0, y = 0 } = step;
+              logger.info(`Scrolling to x: ${x}, y: ${y}`);
+              await page.evaluate(({ x, y }) => {
+                window.scrollTo(x, y);
+              }, { x, y });
+              break;
+            }
+            case 'setViewport': {
+              const { width, height, deviceScaleFactor, isMobile, hasTouch, isLandscape } = step;
+              logger.info(`Setting viewport to width: ${width}, height: ${height}`);
+              // 设置视口尺寸
+              await page.setViewportSize({
+                width,
+                height
+              });
+
+              // 构建媒体特性数组
+              const mediaFeatures: { name: string; value: string | number | boolean }[] = [];
+              if (deviceScaleFactor !== undefined) {
+                mediaFeatures.push({ name: 'device-pixel-ratio', value: deviceScaleFactor });
+              }
+              if (isMobile !== undefined) {
+                mediaFeatures.push({ name: 'hover', value: isMobile ? 'none' : 'hover' });
+                mediaFeatures.push({ name: 'pointer', value: isMobile ? 'coarse' : 'fine' });
+              }
+              if (hasTouch !== undefined) {
+                mediaFeatures.push({ name: 'pointer', value: hasTouch ? 'coarse' : 'fine' });
+              }
+              if (isLandscape !== undefined) {
+                mediaFeatures.push({ name: 'orientation', value: isLandscape ? 'landscape' : 'portrait' });
+              }
+
+              if (mediaFeatures.length > 0) {
+                // 使用 page.emulateMediaFeatures 设置媒体特性
+                // await page.emulateMediaFeatures(mediaFeatures);
+              }
+              break;
+            }
+            case 'waitForElement': {
+                if(selectedElement==null ||selectedSelector==null){
+                    throw new Error(`No valid selector found for this step<${stepCount}>: ${JSON.stringify(step)}`);
+                }    
+
+                const { 
+                    operator = '==', 
+                    count = 1, 
+                    visible = true, 
+                    properties = {}, 
+                    attributes = {} 
+                } = step;
+                let waitForSelectorOptions: { timeout: number; state?: 'attached' | 'detached' | 'visible' | 'hidden' } = { timeout };
+                if (visible) {
+                    waitForSelectorOptions.state = 'visible';
+                }
+                logger.info(`Waiting for element ${selectedSelector} with operator ${operator}, count ${count}`);
+                await page.waitForSelector(selectedSelector, waitForSelectorOptions);
+                // 处理 operator 和 count 逻辑
+                await page.waitForFunction(
+                    ({ selector, operator, count }) => {
+                    const elements = document.querySelectorAll(selector);
+                    const elementCount = elements.length;
+                    switch (operator) {
+                        case '==': return elementCount === count;
+                        case '!=': return elementCount !== count;
+                        case '>': return elementCount > count;
+                        case '<': return elementCount < count;
+                        case '>=': return elementCount >= count;
+                        case '<=': return elementCount <= count;
+                        default: return false;
+                    }
+                    },
+                    { selector: selectedSelector, operator, count },
+                    { timeout }
+                );
+                // 处理 properties 和 attributes
+                if (Object.keys(properties).length > 0) {
+                    await page.waitForFunction(
+                    // 明确参数类型
+                    ({ selector, properties }: { selector: string; properties: Record<string, any> }) => {
+                        const element = document.querySelector(selector);
+                        if (!element) return false;
+                        // 将 element 转换为 HTMLElement 类型
+                        const htmlElement = element as HTMLElement;
+                        for (const [key, value] of Object.entries(properties)) {
+                        // 使用 Reflect.get 安全地访问属性
+                        if (Reflect.get(htmlElement, key) !== value) return false;
+                        }
+                        return true;
+                    },
+                    { selector: selectedSelector, properties },
+                    { timeout }
+                    );
+                }
+                if (Object.keys(attributes).length > 0) {
+                    await page.waitForFunction(
+                    // 明确参数类型
+                    ({ selector, attributes }: { selector: string; attributes: Record<string, string | null> }) => {
+                        const element = document.querySelector(selector);
+                        if (!element) return false;
+                        // 将 element 转换为 HTMLElement 类型
+                        const htmlElement = element as HTMLElement;
+                        for (const [key, value] of Object.entries(attributes)) {
+                        // 使用 getAttribute 方法获取属性值
+                        if (htmlElement.getAttribute(key) !== value) return false;
+                        }
+                        return true;
+                    },
+                    { selector: selectedSelector, attributes },
+                    { timeout }
+                    );
+                }
+                break;
+            }
+            case 'waitForExpression': {
+              const expression = step.expression;
+              logger.info(`Waiting for expression ${expression} with timeout ${timeout}ms`);
+              await page.waitForFunction(expression, null, { timeout });
+              break;
+            }
+            default:
+              logger.error(`Unsupported action type: ${actionType}`);
+          }
+
+          // 处理 assertedEvents
+          for (const event of assertedEvents) {
+            switch (event.type) {
+              case 'elementBoundingBox':
+                logger.info(`Asserting element ${event.selector} bounding box`);
+                await page.waitForSelector(event.selector, { timeout });
+                break;
+              case 'elementCount':
+                logger.info(`Asserting element ${event.selector} count is ${event.count}`);
+                await page.waitForFunction(
+                  // 明确参数类型，函数会在浏览器上下文中执行
+                  ({ selector, count }: { selector: string; count: number }) => {
+                    const elements = document.querySelectorAll(selector);
+                    return elements.length === count;
+                  },
+                  // 传递包含参数的对象
+                  { selector: event.selector, count: event.count },
+                  { timeout }
+                );
+                break;
+              case 'elementText':
+                logger.info(`Asserting element ${event.selector} text is ${event.text}`);
+                await page.waitForFunction(
+                  // 明确参数类型，函数会在浏览器上下文中执行
+                  ({ selector, text }: { selector: string; text: string }) => {
+                    const element = document.querySelector(selector);
+                    return element?.textContent === text;
+                  },
+                  // 传递包含参数的对象
+                  { selector: event.selector, text: event.text },
+                  { timeout }
+                );
+                break;
+              case 'navigation':
+                logger.info(`Asserting navigation to ${event.url}`);
+                await page.waitForURL(event.url, { timeout });
+                break;
+              default:
+                logger.info(`Unsupported asserted event type: ${event.type}`);
+            }
+          }
+        } catch (error) {
+            logger.error(`Step<${stepCount}>Error executing action ${actionType}:`, error);
+            throw error;
+        }
+        
+        stepCount++;
+      }
+
+      logger.error('replayCompleted', '回放已完成');
+      playwrightTasks[taskId] = {
+        status: 'completed',
+        result: {
+            successReplay: true
+        }
+      };
+      return true;
+    } catch (error) {
+      logger.error('回放失败:', error);
+
+      playwrightTasks[taskId] = {
+        status: 'failed',
+        error: error as Error
+      };
+      return false;      
+    }
+  }
+
+
 export async function createServer(): Promise<{ server: McpServer; browserAgent: AgentInterface }> {
     let browserAgent;
     try {
@@ -457,50 +806,112 @@ export async function createServer(): Promise<{ server: McpServer; browserAgent:
       server.tool("runCompiledPlaywrightCode", "run playwright web auto code stored in a .ts file. The .ts code must follow externScripts/scriptTemplate.ts.", {
         scriptFile: z.string().describe(`The .ts file of playwright web auto code script file. The file path is relative to src/externScripts/}`)
     }, async ({ scriptFile }) => {
-        try{
-            // 将 .ts 替换为 .js
-            const jsScriptFile = scriptFile.replace(/\.ts$/, '.js');
-            // 构建编译后的文件路径
-            const projectRoot = path.resolve(__dirname, '../');
-            const compiledScriptFilePath = path.join(
-                projectRoot,
-                'dist',
-                'externScripts',
-                jsScriptFile
-            );
-            const scriptFileUrl = pathToFileURL(compiledScriptFilePath).href;
-            logger.error(`imported script:${scriptFileUrl}`);
+        const taskId = randomUUID();
+        playwrightTasks[taskId] = {
+            status: 'pending'
+            };
 
-            const scriptTS = await import(scriptFileUrl);
+        // 异步执行脚本
+        (async () => {
+            try {
+                // 将 .ts 替换为 .js
+                const jsScriptFile = scriptFile.replace(/\.ts$/, '.js');
+                // 构建编译后的文件路径
+                const projectRoot = path.resolve(__dirname, '../');
+                const compiledScriptFilePath = path.join(
+                    projectRoot,
+                    'dist',
+                    'externScripts',
+                    jsScriptFile
+                );
+                const scriptFileUrl = pathToFileURL(compiledScriptFilePath).href;
+                logger.error(`imported script:${scriptFileUrl}`);
+
+                const scriptTS = await import(scriptFileUrl);
+                
+                if (typeof scriptTS.run !== 'function') {
+                    throw new Error('脚本必须导出一个 `run` 函数');
+                }
+
+                const page = await agentContext.getCurrentPage();
             
-            if (typeof scriptTS.run !== 'function') {
-            throw new Error('脚本必须导出一个 `run` 函数');
+                // 调用 run 并传入参数
+                const jsonString = await scriptTS.run({
+                    browser: browserAgent.getBrowser(),
+                    context: browserAgent.getContext(),
+                    page: page,
+                    customData: { searchText: "adxl345" }, // 可选自定义参数
+                });
+            
+                // 解析 JSON
+                const result = JSON.parse(jsonString);
+                console.error('脚本执行结果:', result);
+
+                playwrightTasks[taskId] = {
+                    status: 'completed',
+                    result: {
+                        isCodeRun: true,
+                        codeRunResult: result
+                    }
+                };
+            } catch (error) {
+                console.error('执行脚本失败:', error);
+                playwrightTasks[taskId] = {
+                    status: 'failed',
+                    error: error as Error
+                };
             }
-        
-            // 调用 run 并传入参数
-            const jsonString = await scriptTS.run({
-                browser:browserAgent.getBrowser(),
-                context:browserAgent.getContext(),
-                page:agentContext.getCurrentPage(),
-                customData: { userId: 123 }, // 可选自定义参数
-            });
-        
-            // 解析 JSON
-            const result = JSON.parse(jsonString);
-            console.error('脚本执行结果:', result);
+        })();
+
+        return {
+            content: [
+                {
+                    type: "text",
+                    text: JSON.stringify({ taskId, message: '任务已启动，可通过 checkPlaywrightTaskStatus 工具查询状态' }),
+                },
+            ],
+        };
+    });
+
+    // 新增查询任务状态的工具
+    server.tool("checkPlaywrightTaskStatus", "Check the status and result of a playwright task", {
+        taskId: z.string().describe("The task ID returned by runCompiledPlaywrightCode")
+    }, async ({ taskId }) => {
+        const task = playwrightTasks[taskId];
+        if (!task) {
+            throw new Error('任务 ID 不存在');
+        }
+
+        if (task.status === 'pending') {
             return {
                 content: [
                     {
                         type: "text",
-                        text: JSON.stringify({ isCodeRun:true, codeRunResult:result}),
+                        text: JSON.stringify({ taskId, status: 'pending', message: '任务正在执行中' }),
                     },
                 ],
-            };    
-          } catch (error) {
-            console.error('执行脚本失败:', error);
-            throw error;
-          }
+            };
+        } else if (task.status === 'completed') {
+            return {
+                content: [
+                    {
+                        type: "text",
+                        text: JSON.stringify({ taskId, status: 'completed', result: task.result }),
+                    },
+                ],
+            };
+        } else { // failed
+            return {
+                content: [
+                    {
+                        type: "text",
+                        text: JSON.stringify({ taskId, status: 'failed', error: task.error?.message }),
+                    },
+                ],
+            };
+        }
     });
+
   
     // 13. run playwright code JIT.
     server.tool("runCompiledPlaywrightCodeJIT", "Compile .ts source file and run it. Source code must follow externScripts/scriptTemplate.ts.", {
@@ -534,9 +945,55 @@ export async function createServer(): Promise<{ server: McpServer; browserAgent:
             throw error;
         }
     });
-      
 
-    // 14.saveLinkImage 工具
+    // 14. get user-flow input_schema.
+    server.tool("getInputSchemaOfUserFlow", "get input schema for a user-flow.", {
+        userFlowJsonFile: z.string().describe("The user flow json file. The file path is relative to src/recordUserFlow/}`"),
+    }, async ({ userFlowJsonFile }) => {
+        const userFlowJsonFilePath = path.join(__dirname, '../src/recordUserFlow/', userFlowJsonFile);
+
+        const content = await fs.readFile(userFlowJsonFilePath, 'utf-8')
+        const jsonObj = JSON.parse(content);
+        const input_schema = jsonObj.input_schema;
+        
+        return {
+            content: [
+                {
+                    type: "text",
+                    text: JSON.stringify({input_schema}),
+                },
+            ],
+        };
+    });
+    
+    // 15. replay user-flow json file.
+    server.tool("replayUserFlow", "replay user flow recorded by devTool in browser.Before call this tool, caller should get input schema via getInputSchemaOfUserFlow to correctly format params. ", {
+        userFlowJsonFile: z.string().describe("The user flow json file. The file path is relative to src/recordUserFlow/}`"),
+        inputData: z.record(z.any()).optional().describe("The input data in JSON format for the User Flow.")
+    }, async ({ userFlowJsonFile,inputData={} }) => {
+        logger.error(`inputData:${JSON.stringify(inputData)}`);
+        const page = await agentContext.getCurrentPage();
+        if (!page) {
+            throw new Error('Page not found');
+        }
+
+        const taskId = randomUUID();
+        playwrightTasks[taskId] = {
+            status: 'pending'
+            };
+        
+        replay(userFlowJsonFile,inputData,page,agentContext,taskId);
+        return {
+            content: [
+                {
+                    type: "text",
+                    text: JSON.stringify({ taskId, message: '任务已启动，可通过 checkPlaywrightTaskStatus 工具查询状态' }),
+                },
+            ],
+        };
+    });
+
+    // 16.saveLinkImage 工具
     server.tool("saveLinkImage", "save the images specied in selector on page", {
         selector: z.string().describe("the image element's selector in page"),
     }, async ({ selector }) => {
@@ -596,7 +1053,7 @@ export async function createServer(): Promise<{ server: McpServer; browserAgent:
         return fs.readFile(templatePath, 'utf-8');
     }
     
-    //15. 在浏览器中展示本地文件
+    //17. 在浏览器中展示本地文件
     server.tool(
         "showLocalFile",
         "Display a specified local file in a new page",

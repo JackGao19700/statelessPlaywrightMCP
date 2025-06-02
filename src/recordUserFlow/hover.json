@@ -1,0 +1,401 @@
+{
+    "title": "hoverCoffee333",
+    "steps": [
+        {
+            "type": "navigate",
+            "url": "https://coffee-cart.app/",
+            "assertedEvents": [
+                {
+                    "type": "navigation",
+                    "url": "https://coffee-cart.app/",
+                    "title": "Coffee cart"
+                }
+            ]
+        },
+        {
+            "type": "click",
+            "target": "main",
+            "selectors": [
+                [
+                    "aria/Espresso"
+                ],
+                [
+                    "[data-test='Espresso']"
+                ],
+                [
+                    "xpath///*[@data-test=\"Espresso\"]"
+                ],
+                [
+                    "pierce/[data-test='Espresso']"
+                ]
+            ],
+            "offsetY": 100.77783203125,
+            "offsetX": 130.1857147216797
+        },
+        {
+            "type": "click",
+            "target": "main",
+            "selectors": [
+                [
+                    "aria/Espresso Macchiato"
+                ],
+                [
+                    "[data-test='Espresso_Macchiato']"
+                ],
+                [
+                    "xpath///*[@data-test=\"Espresso_Macchiato\"]"
+                ],
+                [
+                    "pierce/[data-test='Espresso_Macchiato']"
+                ],
+                [
+                    "text/espressomilk"
+                ]
+            ],
+            "offsetY": 159.77783203125,
+            "offsetX": 121.66574096679688
+        },
+        {
+            "type": "click",
+            "target": "main",
+            "selectors": [
+                [
+                    "aria/Mocha"
+                ],
+                [
+                    "[data-test='Mocha']"
+                ],
+                [
+                    "xpath///*[@data-test=\"Mocha\"]"
+                ],
+                [
+                    "pierce/[data-test='Mocha']"
+                ],
+                [
+                    "text/espressochocolate"
+                ]
+            ],
+            "offsetY": 140.69784545898438,
+            "offsetX": 103.66574096679688
+        },
+        {
+            "type": "click",
+            "target": "main",
+            "selectors": [
+                [
+                    "aria/Flat White"
+                ],
+                [
+                    "[data-test='Flat_White']"
+                ],
+                [
+                    "xpath///*[@data-test=\"Flat_White\"]"
+                ],
+                [
+                    "pierce/[data-test='Flat_White']"
+                ]
+            ],
+            "offsetY": 107.33782958984375,
+            "offsetX": 173.1857147216797
+        },
+        {
+            "type": "hover",
+            "target": "main",
+            "selectors": [
+                "aria/Proceed to checkout",
+                "[data-test='checkout']",
+                "xpath///*[@data-test=\"checkout\"]",
+                "pierce/[data-test='checkout']",
+                "text/Total: $48.00"
+            ]
+        },
+        {
+            "type": "click",
+            "target": "main",
+            "selectors": [
+                [
+                    "aria/Add one Espresso"
+                ],
+                [
+                    "li:nth-of-type(1) button:nth-of-type(1)"
+                ],
+                [
+                    "xpath///*[@id=\"app\"]/div[2]/div[1]/ul/li[1]/div[2]/button[1]"
+                ],
+                [
+                    "pierce/li:nth-of-type(1) button:nth-of-type(1)"
+                ]
+            ],
+            "offsetY": 17.1600341796875,
+            "offsetX": 11.23004150390625
+        },
+        {
+            "type": "click",
+            "target": "main",
+            "selectors": [
+                [
+                    "aria/Add one Flat White"
+                ],
+                [
+                    "li:nth-of-type(3) button:nth-of-type(1)"
+                ],
+                [
+                    "xpath///*[@id=\"app\"]/div[2]/div[1]/ul/li[3]/div[2]/button[1]"
+                ],
+                [
+                    "pierce/li:nth-of-type(3) button:nth-of-type(1)"
+                ]
+            ],
+            "offsetY": 12.08001708984375,
+            "offsetX": 12.23004150390625
+        },
+        {
+            "type": "click",
+            "target": "main",
+            "selectors": [
+                [
+                    "aria/Add one Espresso Macchiato"
+                ],
+                [
+                    "li:nth-of-type(2) button:nth-of-type(1)"
+                ],
+                [
+                    "xpath///*[@id=\"app\"]/div[2]/div[1]/ul/li[2]/div[2]/button[1]"
+                ],
+                [
+                    "pierce/li:nth-of-type(2) button:nth-of-type(1)"
+                ]
+            ],
+            "offsetY": 11.6199951171875,
+            "offsetX": 16.23004150390625
+        },
+        {
+            "type": "click",
+            "target": "main",
+            "selectors": [
+                [
+                    "aria/Add one Espresso Macchiato"
+                ],
+                [
+                    "li:nth-of-type(2) button:nth-of-type(1)"
+                ],
+                [
+                    "xpath///*[@id=\"app\"]/div[2]/div[1]/ul/li[2]/div[2]/button[1]"
+                ],
+                [
+                    "pierce/li:nth-of-type(2) button:nth-of-type(1)"
+                ]
+            ],
+            "offsetY": 9.6199951171875,
+            "offsetX": 16.23004150390625
+        },
+        {
+            "type": "click",
+            "target": "main",
+            "selectors": [
+                [
+                    "aria/Add one Espresso Macchiato"
+                ],
+                [
+                    "li:nth-of-type(2) button:nth-of-type(1)"
+                ],
+                [
+                    "xpath///*[@id=\"app\"]/div[2]/div[1]/ul/li[2]/div[2]/button[1]"
+                ],
+                [
+                    "pierce/li:nth-of-type(2) button:nth-of-type(1)"
+                ]
+            ],
+            "offsetY": 9.6199951171875,
+            "offsetX": 14.23004150390625
+        },
+        {
+            "type": "click",
+            "target": "main",
+            "selectors": [
+                [
+                    "aria/Proceed to checkout"
+                ],
+                [
+                    "[data-test='checkout']"
+                ],
+                [
+                    "xpath///*[@data-test=\"checkout\"]"
+                ],
+                [
+                    "pierce/[data-test='checkout']"
+                ],
+                [
+                    "text/Total: $112.00"
+                ]
+            ],
+            "offsetY": 32.1600341796875,
+            "offsetX": 146.24002075195312
+        },
+        {
+            "type": "click",
+            "target": "main",
+            "selectors": [
+                [
+                    "aria/Name"
+                ],
+                [
+                    "#name"
+                ],
+                [
+                    "xpath///*[@id=\"name\"]"
+                ],
+                [
+                    "pierce/#name"
+                ]
+            ],
+            "offsetY": 13.060012817382812,
+            "offsetX": 124.8800048828125
+        },
+        {
+            "type": "change",
+            "value": "${name}",
+            "selectors": [
+                [
+                    "aria/Name"
+                ],
+                [
+                    "#name"
+                ],
+                [
+                    "xpath///*[@id=\"name\"]"
+                ],
+                [
+                    "pierce/#name"
+                ]
+            ],
+            "target": "main"
+        },
+        {
+            "type": "click",
+            "target": "main",
+            "selectors": [
+                [
+                    "aria/Email"
+                ],
+                [
+                    "#email"
+                ],
+                [
+                    "xpath///*[@id=\"email\"]"
+                ],
+                [
+                    "pierce/#email"
+                ]
+            ],
+            "offsetY": 22.52001953125,
+            "offsetX": 110.8800048828125
+        },
+        {
+            "type": "change",
+            "value": "liu@",
+            "selectors": [
+                [
+                    "aria/Email"
+                ],
+                [
+                    "#email"
+                ],
+                [
+                    "xpath///*[@id=\"email\"]"
+                ],
+                [
+                    "pierce/#email"
+                ]
+            ],
+            "target": "main"
+        },
+        {
+            "type": "keyUp",
+            "key": "2",
+            "target": "main"
+        },
+        {
+            "type": "change",
+            "value": "${email}",
+            "selectors": [
+                [
+                    "aria/Email"
+                ],
+                [
+                    "#email"
+                ],
+                [
+                    "xpath///*[@id=\"email\"]"
+                ],
+                [
+                    "pierce/#email"
+                ]
+            ],
+            "target": "main"
+        },
+        {
+            "type": "click",
+            "target": "main",
+            "selectors": [
+                [
+                    "aria/Promotion message"
+                ],
+                [
+                    "#promotion-label"
+                ],
+                [
+                    "xpath///*[@id=\"promotion-label\"]"
+                ],
+                [
+                    "pierce/#promotion-label"
+                ],
+                [
+                    "text/I would like"
+                ]
+            ],
+            "offsetY": 13.980010986328125,
+            "offsetX": 112.86000061035156
+        },
+        {
+            "type": "click",
+            "target": "main",
+            "selectors": [
+                [
+                    "aria/Submit"
+                ],
+                [
+                    "#submit-payment"
+                ],
+                [
+                    "xpath///*[@id=\"submit-payment\"]"
+                ],
+                [
+                    "pierce/#submit-payment"
+                ],
+                [
+                    "text/Submit"
+                ]
+            ],
+            "offsetY": 20.279998779296875,
+            "offsetX": 18.75
+        }
+    ],
+    "input_schema": [
+            {
+              "name": "name",
+              "type": "string",
+              "required": true
+            },
+            {
+              "name": "email",
+              "type": "string",
+              "required": true
+            },
+            {
+              "name": "item_count",
+              "type": "number",
+              "required": false
+            }
+    ]
+}
