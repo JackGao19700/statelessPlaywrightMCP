@@ -396,20 +396,23 @@ async function replay(userFlowfileName: string,inputData:Record<string,any>,page
       }
 
       logger.error('replayCompleted', '回放已完成');
-      playwrightTasks[taskId] = {
-        status: 'completed',
-        result: {
-            successReplay: true
-        }
-      };
+
+      await agentContext.updateTaskStatus(taskId, 'completed', { successReplay: true });
+
       return true;
     } catch (error) {
       logger.error('回放失败:', error);
 
-      playwrightTasks[taskId] = {
-        status: 'failed',
-        error: error as Error
-      };
+      let errorToStore: Error;
+      if (error instanceof Error) {
+          errorToStore = error;
+      } else {
+          // 若 error 不是 Error 类型，创建一个新的 Error 对象
+          errorToStore = new Error(`非 Error 类型错误: ${JSON.stringify(error)}`);
+      }
+
+      await agentContext.updateTaskStatus(taskId, 'failed', undefined,errorToStore);
+
       return false;      
     }
   }
@@ -429,7 +432,10 @@ export async function createServer(): Promise<{ server: McpServer; browserAgent:
         logger.error('Browser context is not initialized.');
         throw new Error('Browser context is not initialized.');
     }
-    const agentContext = new AgentContext(browserContext);
+
+    const mongoUrl = process.env.MONGO_URL || 'mongodb://localhost:27017';
+    const dbName = process.env.MONGO_DB_NAME || 'playwrightTasksDB';
+    const agentContext = new AgentContext(browserContext, mongoUrl, dbName);
     const server = new McpServer({
         name: "contextBrowserServer",
         version: "0.1.0",
@@ -807,9 +813,7 @@ export async function createServer(): Promise<{ server: McpServer; browserAgent:
         scriptFile: z.string().describe(`The .ts file of playwright web auto code script file. The file path is relative to src/externScripts/}`)
     }, async ({ scriptFile }) => {
         const taskId = randomUUID();
-        playwrightTasks[taskId] = {
-            status: 'pending'
-            };
+        await agentContext.createTask(taskId);
 
         // 异步执行脚本
         (async () => {
@@ -845,21 +849,21 @@ export async function createServer(): Promise<{ server: McpServer; browserAgent:
             
                 // 解析 JSON
                 const result = JSON.parse(jsonString);
-                console.error('脚本执行结果:', result);
+                logger.error('脚本执行结果:', result);
 
-                playwrightTasks[taskId] = {
-                    status: 'completed',
-                    result: {
-                        isCodeRun: true,
-                        codeRunResult: result
-                    }
-                };
+                await agentContext.updateTaskStatus(taskId, 'completed', result);
             } catch (error) {
-                console.error('执行脚本失败:', error);
-                playwrightTasks[taskId] = {
-                    status: 'failed',
-                    error: error as Error
-                };
+                logger.error('执行脚本失败:', error);
+
+                let errorToStore: Error;
+                if (error instanceof Error) {
+                    errorToStore = error;
+                } else {
+                    // 若 error 不是 Error 类型，创建一个新的 Error 对象
+                    errorToStore = new Error(`非 Error 类型错误: ${JSON.stringify(error)}`);
+                }
+
+                await agentContext.updateTaskStatus(taskId, 'failed', undefined, errorToStore);
             }
         })();
 
@@ -877,7 +881,7 @@ export async function createServer(): Promise<{ server: McpServer; browserAgent:
     server.tool("checkPlaywrightTaskStatus", "Check the status and result of a playwright task", {
         taskId: z.string().describe("The task ID returned by runCompiledPlaywrightCode")
     }, async ({ taskId }) => {
-        const task = playwrightTasks[taskId];
+        const task = await agentContext.getTaskStatus(taskId);
         if (!task) {
             throw new Error('任务 ID 不存在');
         }
@@ -905,7 +909,7 @@ export async function createServer(): Promise<{ server: McpServer; browserAgent:
                 content: [
                     {
                         type: "text",
-                        text: JSON.stringify({ taskId, status: 'failed', error: task.error?.message }),
+                        text: JSON.stringify({ taskId, status: 'failed', error: task.error}),
                     },
                 ],
             };
@@ -931,7 +935,7 @@ export async function createServer(): Promise<{ server: McpServer; browserAgent:
     
             // 解析 JSON
             const result = JSON.parse(jsonString);
-            console.error('脚本执行结果:', result);
+            logger.error('脚本执行结果:', result);
             return {
                 content: [
                     {
@@ -941,7 +945,7 @@ export async function createServer(): Promise<{ server: McpServer; browserAgent:
                 ],
             };
         } catch (error) {
-            console.error('执行脚本失败:', error);
+            logger.error('执行脚本失败:', error);
             throw error;
         }
     });
@@ -978,10 +982,8 @@ export async function createServer(): Promise<{ server: McpServer; browserAgent:
         }
 
         const taskId = randomUUID();
-        playwrightTasks[taskId] = {
-            status: 'pending'
-            };
-        
+        await agentContext.createTask(taskId);
+
         replay(userFlowJsonFile,inputData,page,agentContext,taskId);
         return {
             content: [
