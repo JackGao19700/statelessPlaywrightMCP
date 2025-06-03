@@ -66,6 +66,41 @@ export class AgentContext {
     this.currentPage = page;
   }
 
+  async setCurrentPageByID(pageID:string): Promise<boolean> {
+      const page = await this.findPagesByID(pageID);
+      if (page) {
+        await this.setCurrentPage(page);
+        return true;
+      }
+      return false;
+  }
+
+  async findPagesByID(pageID:string): Promise<Page|null> {
+      const pages = this.context.pages();
+      for (const p of pages) {
+        const targetID=await AgentContext.getPageID(p);
+        if (targetID === pageID) {
+          return p;          
+        }      
+      }
+      return null;
+  }
+
+  static async getPageID(page:Page): Promise<string> {
+    try{
+      // 获取底层CDP TargetID（浏览器分配的永久唯一标识）
+      const session = await page.context().newCDPSession(page);
+      const response = await session.send('Target.getTargetInfo');
+      const targetID = response.targetInfo.targetId;
+      return targetID;
+    } catch (error) {
+      // 处理错误，例如忽略错误或记录日志
+      // logger.error('Failed to get target info:', error);
+      throw error;
+    }
+  }
+
+
   // 销毁所有资源
   async destroy(): Promise<void> {
     //Do nothing.
